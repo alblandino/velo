@@ -1,0 +1,129 @@
+{
+  "errorFatal": "Fatal error: {error}",
+
+  "banner": {
+    "servidor": "Velo - In-memory data store",
+    "cliente": "Velo - Interactive REPL client",
+    "autor": "Author: {autor}",
+    "paquete": "Pkg   : {nombre}  v{version}"
+  },
+
+  "servidor": {
+    "iniciado": "Server listening on {host}:{puerto}",
+    "basesDisponibles": "Available databases: {total} (0 to {ultima})",
+    "limiteConexiones": "Connection limit: {maximo}",
+    "nivelLog": "Log level: {nivel}",
+    "errorInicio": "Could not start the server: {error}",
+    "errorTcp": "TCP error: {error}",
+    "puertoEnUso": "Port {puerto} is already in use. Make sure no other instance is running.",
+    "clienteConectado": "Client connected: {direccion} (active: {activas})",
+    "limiteAlcanzado": "Connection limit reached ({maximo}). Rejecting {direccion}",
+    "senalRecibida": "Received {senal}. Shutting down server...",
+    "cerrando": "Starting graceful shutdown... ({activas} active connections)",
+    "cierreCompletado": "Shutdown complete.",
+    "detenido": "Server stopped.",
+    "errorCierre": "Error during shutdown: {error}",
+    "excepcionNoCapturada": "Uncaught exception: {error}",
+    "promesaRechazada": "Unhandled promise rejection: {razon}"
+  },
+
+  "conexion": {
+    "desconectado": "Client disconnected: {direccion}",
+    "errorSocket": "Socket error: {error}",
+    "errorParseo": "Could not parse data: {error}",
+    "errorEjecucion": "Error running '{comando}': {error}",
+    "errorInterno": "internal error while processing the command",
+    "comandoVacio": "empty command"
+  },
+
+  "almacen": {
+    "baseFueraDeRango": "Database out of range: {db} (max: {maximo})",
+    "sweep": "Sweep: removed {total} expired key(s)"
+  },
+
+  "comandos": {
+    "desconocido": "unknown command '{comando}'",
+    "argumentosIncorrectos": "wrong number of arguments for '{comando}' command",
+    "argumentosEnPares": "wrong number of arguments for '{comando}' command (key-value pairs are required)",
+    "tipoIncorrecto": "Operation against a key holding the wrong kind of value",
+    "noEsEntero": "value is not an integer or out of range",
+    "expiracionNegativa": "expire time cannot be negative",
+    "expiracionPositiva": "expire time must be a positive integer greater than zero",
+    "opcionEnteroPositivo": "the value of {opcion} must be a positive integer",
+    "opcionTimestamp": "the value of {opcion} must be a positive unix timestamp",
+    "opcionTimestampMs": "the value of {opcion} must be a positive unix timestamp in ms",
+    "opcionDesconocida": "unknown option: {opcion}",
+    "opcionDesconocidaPara": "unknown option for {comando}: {opcion}",
+    "opcionesExclusivas": "{a} and {b} options are mutually exclusive",
+    "claveNoExiste": "no such key",
+    "baseFueraDeRango": "DB index is out of range. Valid range: 0 to {ultima}"
+  },
+
+  "cliente": {
+    "conectado": "Connected to {host}:{puerto}",
+    "instrucciones": "Type a command or \"exit\" to quit.",
+    "errorConexion": "Could not connect to {host}:{puerto}: {error}",
+    "sugerenciaServidor": "Make sure the server is running with: velo server",
+    "errorSocket": "Socket error: {error}",
+    "cerradaPorServidor": "Connection closed by the server.",
+    "conexionCerrada": "The connection to the server was closed.",
+    "desconectando": "Disconnecting...",
+    "sesionTerminada": "Session ended.",
+    "formato": {
+      "nulo": "(nil)",
+      "error": "(error) {mensaje}",
+      "entero": "(integer) {valor}",
+      "arrayVacio": "(empty array)"
+    }
+  },
+
+  "cli": {
+    "ayuda": [
+      "velo v{version} - In-memory data store (RESP protocol over TCP)",
+      "",
+      "Usage:",
+      "  velo server [options]                Start the server",
+      "  velo [options]                       Open the interactive REPL client",
+      "  velo [options] command [args ...]    Run one command and exit",
+      "",
+      "Client options go before the command; everything after the command",
+      "is sent to the server as is.",
+      "",
+      "Connection (server and client):",
+      "  -h, --host <host>        Server host (current: {host})",
+      "  -p, --port <port>        Server port (current: {puerto})",
+      "",
+      "Client:",
+      "  -n, --db <index>         Database to select after connecting",
+      "",
+      "Server:",
+      "  --max-connections <n>    Maximum simultaneous connections",
+      "  --log-level <level>      debug | info | warn | error",
+      "  --db-count <n>           Number of databases",
+      "  --sweep-interval <ms>    Interval of the expired keys sweep",
+      "",
+      "General:",
+      "  --help                   Show this help",
+      "  -v, --version            Show the version",
+      "",
+      "Examples:",
+      "  velo server --port 7000 --log-level debug",
+      "  velo set greeting hello",
+      "  velo get greeting",
+      "  velo -p 7000 -n 2 keys \"*\""
+    ],
+    "errores": {
+      "opcionDesconocida": "unknown option: {opcion}",
+      "faltaValor": "missing value for option {opcion}",
+      "valorEntero": "option {opcion} expects an integer (got: {valor})",
+      "valorNivel": "option {opcion} expects one of: {niveles} (got: {valor})",
+      "argumentoInesperado": "unexpected argument for server mode: {argumento}",
+      "verAyuda": "Run \"velo --help\" to see the help."
+    }
+  },
+
+  "dev": {
+    "vigilando": "Watching {carpeta}/ for changes (Ctrl+C to quit)",
+    "reiniciando": "Change detected in {archivo}. Restarting server..."
+  }
+}

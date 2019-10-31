@@ -1,0 +1,19 @@
+{
+  "name": "@alblandino/velo",
+  "version": "0.1.0",
+  "description": "Almacen de datos en memoria accesible a traves de la red usando RESP",
+  "main": "src/server.js",
+  "bin": {
+    "velo": "bin/velo.js"
+  },
+  "author": "Joel Jaime <joel@alblandino.com>",
+  "license": "MIT",
+  "scripts": {
+    "server": "node bin/velo.js server",
+    "client": "node bin/velo.js",
+    "dev": "node scripts/dev.js"
+  },
+  "engines": {
+    "node": ">=13.0.0"
+  }
+}

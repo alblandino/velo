@@ -1,0 +1,129 @@
+{
+  "errorFatal": "Error fatal: {error}",
+
+  "banner": {
+    "servidor": "Velo - Almacen de datos en memoria",
+    "cliente": "Velo - Cliente REPL interactivo",
+    "autor": "Autor : {autor}",
+    "paquete": "Pkg   : {nombre}  v{version}"
+  },
+
+  "servidor": {
+    "iniciado": "Servidor iniciado en {host}:{puerto}",
+    "basesDisponibles": "Bases de datos disponibles: {total} (0 a {ultima})",
+    "limiteConexiones": "Limite de conexiones: {maximo}",
+    "nivelLog": "Nivel de log: {nivel}",
+    "errorInicio": "Error al iniciar el servidor: {error}",
+    "errorTcp": "Error TCP: {error}",
+    "puertoEnUso": "El puerto {puerto} ya esta en uso. Verifica que no haya otra instancia corriendo.",
+    "clienteConectado": "Cliente conectado: {direccion} (activas: {activas})",
+    "limiteAlcanzado": "Limite de conexiones alcanzado ({maximo}). Rechazando {direccion}",
+    "senalRecibida": "Senal recibida: {senal}. Cerrando servidor...",
+    "cerrando": "Iniciando cierre ordenado... ({activas} conexiones activas)",
+    "cierreCompletado": "Cierre completado.",
+    "detenido": "Servidor detenido.",
+    "errorCierre": "Error durante el cierre: {error}",
+    "excepcionNoCapturada": "Excepcion no capturada: {error}",
+    "promesaRechazada": "Promesa rechazada sin manejar: {razon}"
+  },
+
+  "conexion": {
+    "desconectado": "Cliente desconectado: {direccion}",
+    "errorSocket": "Error en socket: {error}",
+    "errorParseo": "Error al parsear datos: {error}",
+    "errorEjecucion": "Error al ejecutar '{comando}': {error}",
+    "errorInterno": "error interno al procesar el comando",
+    "comandoVacio": "comando vacio"
+  },
+
+  "almacen": {
+    "baseFueraDeRango": "Base de datos fuera de rango: {db} (max: {maximo})",
+    "sweep": "Sweep: {total} clave(s) expirada(s) eliminada(s)"
+  },
+
+  "comandos": {
+    "desconocido": "comando desconocido: '{comando}'",
+    "argumentosIncorrectos": "numero de argumentos incorrecto para el comando {comando}",
+    "argumentosEnPares": "numero de argumentos incorrecto para el comando {comando} (se requieren pares clave-valor)",
+    "tipoIncorrecto": "la operacion no es compatible con el tipo almacenado en esta clave",
+    "noEsEntero": "el valor no es un entero o esta fuera del rango permitido",
+    "expiracionNegativa": "el tiempo de expiracion no puede ser negativo",
+    "expiracionPositiva": "el tiempo de expiracion debe ser un entero positivo mayor que cero",
+    "opcionEnteroPositivo": "el valor de {opcion} debe ser un entero positivo",
+    "opcionTimestamp": "el valor de {opcion} debe ser un timestamp unix positivo",
+    "opcionTimestampMs": "el valor de {opcion} debe ser un timestamp unix en ms positivo",
+    "opcionDesconocida": "opcion desconocida: {opcion}",
+    "opcionDesconocidaPara": "opcion desconocida para {comando}: {opcion}",
+    "opcionesExclusivas": "las opciones {a} y {b} son mutuamente exclusivas",
+    "claveNoExiste": "no existe la clave",
+    "baseFueraDeRango": "el indice de base de datos esta fuera de rango. Rango valido: 0 a {ultima}"
+  },
+
+  "cliente": {
+    "conectado": "Conectado a {host}:{puerto}",
+    "instrucciones": "Escribe un comando o \"exit\" para salir.",
+    "errorConexion": "No se pudo conectar a {host}:{puerto}: {error}",
+    "sugerenciaServidor": "Asegurate de que el servidor este corriendo con: velo server",
+    "errorSocket": "Error de socket: {error}",
+    "cerradaPorServidor": "Conexion cerrada por el servidor.",
+    "conexionCerrada": "La conexion con el servidor se cerro.",
+    "desconectando": "Desconectando...",
+    "sesionTerminada": "Sesion terminada.",
+    "formato": {
+      "nulo": "(nil)",
+      "error": "(error) {mensaje}",
+      "entero": "(integer) {valor}",
+      "arrayVacio": "(array vacio)"
+    }
+  },
+
+  "cli": {
+    "ayuda": [
+      "velo v{version} - Almacen de datos en memoria (protocolo RESP sobre TCP)",
+      "",
+      "Uso:",
+      "  velo server [opciones]               Inicia el servidor",
+      "  velo [opciones]                      Abre el cliente REPL interactivo",
+      "  velo [opciones] comando [args ...]   Ejecuta un comando y termina",
+      "",
+      "Las opciones del cliente van antes del comando; todo lo que sigue al",
+      "comando se envia tal cual al servidor.",
+      "",
+      "Conexion (servidor y cliente):",
+      "  -h, --host <host>        Host del servidor (actual: {host})",
+      "  -p, --port <puerto>      Puerto del servidor (actual: {puerto})",
+      "",
+      "Cliente:",
+      "  -n, --db <indice>        Base de datos a seleccionar al conectar",
+      "",
+      "Servidor:",
+      "  --max-connections <n>    Maximo de conexiones simultaneas",
+      "  --log-level <nivel>      debug | info | warn | error",
+      "  --db-count <n>           Numero de bases de datos",
+      "  --sweep-interval <ms>    Intervalo del sweep de claves expiradas",
+      "",
+      "Generales:",
+      "  --help                   Muestra esta ayuda",
+      "  -v, --version            Muestra la version",
+      "",
+      "Ejemplos:",
+      "  velo server --port 7000 --log-level debug",
+      "  velo set saludo hola",
+      "  velo get saludo",
+      "  velo -p 7000 -n 2 keys \"*\""
+    ],
+    "errores": {
+      "opcionDesconocida": "opcion desconocida: {opcion}",
+      "faltaValor": "falta el valor de la opcion {opcion}",
+      "valorEntero": "la opcion {opcion} espera un numero entero (recibido: {valor})",
+      "valorNivel": "la opcion {opcion} espera uno de: {niveles} (recibido: {valor})",
+      "argumentoInesperado": "argumento inesperado para el modo server: {argumento}",
+      "verAyuda": "Usa \"velo --help\" para ver la ayuda."
+    }
+  },
+
+  "dev": {
+    "vigilando": "Vigilando cambios en {carpeta}/ (Ctrl+C para salir)",
+    "reiniciando": "Cambio detectado en {archivo}. Reiniciando servidor..."
+  }
+}
