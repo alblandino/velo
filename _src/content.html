@@ -1,0 +1,610 @@
+<section class="sec" id="que-es" data-group="Empezar">
+<h2>Qué es Velo</h2>
+
+<p class="lead">Velo es un almacén clave-valor en memoria al que se accede por red. Lo construí desde cero en Node.js puro, sin una sola dependencia externa, tomando a Redis como modelo: habla el mismo protocolo (RESP) sobre TCP, entiende 23 de sus comandos y se puede usar desde su propio cliente o desde <code>nc</code>.</p>
+
+<p>No pretende competir con Redis. Es una reimplementación de tamaño didáctico, unas 2.000 líneas repartidas en 40 módulos, donde cada pieza que normalmente se esconde detrás de una librería está escrita a mano y se puede leer en una tarde: el socket, el parser del protocolo, el despacho de comandos, el almacenamiento, la expiración de claves, el cliente interactivo, el parser de la línea de comandos e incluso el lector de <code>.env</code>.</p>
+
+<ul class="features">
+  <li>Servidor TCP con el módulo <code>net</code> de Node.</li>
+  <li>Protocolo RESP y comandos inline (estilo telnet).</li>
+  <li>Parser incremental que tolera mensajes partidos y encadenados.</li>
+  <li>23 comandos: strings, TTL y servidor.</li>
+  <li>16 bases de datos lógicas con <code>SELECT</code>.</li>
+  <li>Expiración perezosa más un barrido periódico.</li>
+  <li>Cliente REPL con colores y modo de un solo comando.</li>
+  <li>Clean Architecture: dominio, aplicación e infraestructura.</li>
+  <li>Mensajes en español e inglés.</li>
+  <li>Recarga automática del servidor en desarrollo.</li>
+  <li class="no">Persistencia en disco<span class="sr"> (no implementado)</span>.</li>
+  <li class="no">Listas, hashes y sets<span class="sr"> (no implementado)</span>.</li>
+</ul>
+
+<p class="legend"><span class="legend-yes">Marcado</span>: funciona hoy. <span class="legend-no">Sin marcar</span>: no existe todavía; ver <a class="xref" href="#ruta"></a>.</p>
+
+</section>
+
+<section class="sec" id="por-que" data-group="Empezar">
+<h2>Por qué lo hice</h2>
+
+<p>Velo es un proyecto para aprender. La idea viene de Redis: una herramienta que casi todo el mundo usa como una caja negra (<code>SET</code>, <code>GET</code>, listo) y que, sin embargo, resuelve por dentro varios problemas clásicos de sistemas. La mejor forma de entender esos problemas era volver a resolverlos, sin atajos.</p>
+
+<p>Por eso la regla principal del proyecto es <strong>cero dependencias</strong>. Cada vez que habría sido cómodo instalar algo (un parser de RESP, <code>dotenv</code>, un parser de argumentos, <code>nodemon</code>, una librería de i18n), la respuesta fue escribirlo. No porque sea mejor en producción, sino porque así no queda nada escondido.</p>
+
+<h3>Preguntas que el proyecto contesta</h3>
+<dl class="qa">
+  <dt>¿Cómo sabe el servidor dónde termina un comando?</dt>
+  <dd>TCP entrega un flujo de bytes, no mensajes. Hace falta un protocolo con delimitadores y longitudes, y un parser que espere cuando el mensaje llega a medias. Ver <a class="xref" href="#resp"></a> y <a class="xref" href="#parser"></a>.</dd>
+  <dt>¿Qué ocurre exactamente entre teclear un comando y ver la respuesta?</dt>
+  <dd>Una cadena de diez pasos que cruza cuatro capas. Ver <a class="xref" href="#vida"></a>.</dd>
+  <dt>¿Cómo caduca una clave si nadie la vuelve a leer?</dt>
+  <dd>Con dos mecanismos que se complementan: borrado perezoso y barrido activo. Ver <a class="xref" href="#expiracion"></a>.</dd>
+  <dt>¿Por qué <code>INCR</code> es seguro sin locks?</dt>
+  <dd>Porque, igual que en Redis, cada comando se ejecuta completo en un único hilo. Ver <a class="xref" href="#decisiones"></a>.</dd>
+  <dt>¿Cómo se organiza un servidor para que crecer no duela?</dt>
+  <dd>Separando dominio, casos de uso e infraestructura, con un comando por archivo. Ver <a class="xref" href="#arquitectura"></a>.</dd>
+</dl>
+</section>
+
+<section class="sec" id="arranque" data-group="Empezar">
+<h2>Arranque rápido</h2>
+
+<p>Solo necesitas Node.js 13 o superior. No hay <code>npm install</code> que hacer: no hay nada que instalar.</p>
+
+<pre class="term"><code><span class="pr">$</span> git clone https://github.com/alblandino/velo.git
+<span class="pr">$</span> cd velo
+<span class="pr">$</span> npm link            <span class="cm"># opcional: instala el comando velo</span></code></pre>
+
+<p>El ejecutable <code>velo</code> es a la vez servidor y cliente. En una terminal arranca el servidor:</p>
+
+<pre class="term"><code><span class="pr">$</span> velo server
+<span class="out">============================================================
+ Velo - Almacen de datos en memoria
+ Autor : Joel Jaime &lt;joel@alblandino.com&gt;
+ Pkg   : @alblandino/velo  v0.1.0
+============================================================
+[velo:servidor] Servidor iniciado en 127.0.0.1:6380
+[velo:servidor] Bases de datos disponibles: 16 (0 a 15)
+[velo:servidor] Limite de conexiones: 100
+[velo:servidor] Nivel de log: info</span></code></pre>
+
+<p>En otra, abre el cliente interactivo. El indicador muestra el host, el puerto y la base de datos activa:</p>
+
+<pre class="term"><code><span class="pr">$</span> velo
+<span class="out">[velo:cliente] Conectado a 127.0.0.1:6380</span>
+<span class="pr">velo 127.0.0.1:6380[0]&gt;</span> set saludo hola
+<span class="ok">OK</span>
+<span class="pr">velo 127.0.0.1:6380[0]&gt;</span> get saludo
+<span class="str">"hola"</span>
+<span class="pr">velo 127.0.0.1:6380[0]&gt;</span> incr visitas
+<span class="int">(integer) 1</span>
+<span class="pr">velo 127.0.0.1:6380[0]&gt;</span> select 2
+<span class="ok">OK</span>
+<span class="pr">velo 127.0.0.1:6380[2]&gt;</span> get saludo
+<span class="nil">(nil)</span></code></pre>
+
+<p>También puedes mandar un solo comando y salir. El código de salida es <code>1</code> si el servidor responde con un error y <code>2</code> si la línea de comandos está mal escrita:</p>
+
+<pre class="term"><code><span class="pr">$</span> velo set sesion abc EX 60
+<span class="ok">OK</span>
+<span class="pr">$</span> velo ttl sesion
+<span class="int">(integer) 60</span>
+<span class="pr">$</span> velo -n 3 keys "*"
+<span class="arr">(array vacio)</span></code></pre>
+
+<p>Como el servidor entiende comandos inline, cualquier herramienta que abra un socket sirve. Con <code>nc</code> ves la respuesta RESP en crudo:</p>
+
+<pre class="term"><code><span class="pr">$</span> nc 127.0.0.1 6380
+PING
+<span class="out">+PONG</span>
+SET frase "con espacios"
+<span class="out">+OK</span>
+GET frase
+<span class="out">$12
+con espacios</span></code></pre>
+
+<p class="note">Sin <code>npm link</code>, usa <code>node bin/velo.js</code> en lugar de <code>velo</code>. Servidor y cliente leen la misma configuración (<a class="xref" href="#config"></a>): si el <code>.env</code> del repositorio define otro puerto, los dos lo usarán, y <code>velo --help</code> muestra los valores efectivos.</p>
+
+<h3>Atajos de desarrollo</h3>
+<div class="table-wrap"><table>
+<thead><tr><th>Comando</th><th>Hace</th></tr></thead>
+<tbody>
+<tr><td><code>npm run server</code> · <code>make server</code></td><td>Arranca el servidor.</td></tr>
+<tr><td><code>npm run client</code> · <code>make client</code></td><td>Abre el cliente REPL.</td></tr>
+<tr><td><code>npm run dev</code> · <code>make dev</code></td><td>Arranca el servidor y lo reinicia cada vez que guardas un archivo de <code>src/</code>.</td></tr>
+<tr><td><code>make info</code></td><td>Muestra la configuración activa.</td></tr>
+</tbody>
+</table></div>
+</section>
+
+<section class="sec" id="pruebalo" data-group="Empezar">
+<h2>Pruébalo aquí</h2>
+
+<p>Este terminal ejecuta en tu navegador una réplica de la lógica de los 23 comandos, con los mismos mensajes que el servidor real, y te enseña los bytes RESP que viajarían en cada dirección. Es una simulación: el servidor de verdad corre en Node y se habla con él por TCP. Los bytes se explican en <a class="xref" href="#resp"></a>.</p>
+
+<div class="repl" data-repl>
+  <div class="repl-head"><span>Simulación en el navegador</span><button type="button" class="repl-clear" data-repl-clear>Limpiar</button></div>
+  <div class="repl-log" data-repl-log aria-live="polite"></div>
+  <form class="repl-form" data-repl-form>
+    <label class="repl-prompt" for="repl-in">velo 127.0.0.1:6380[<span data-repl-db>0</span>]&gt;</label>
+    <input id="repl-in" data-repl-input autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="escribe un comando, p. ej. SET saludo hola">
+    <button type="submit" class="repl-send">Enviar</button>
+  </form>
+  <div class="repl-try"><span class="repl-try-l">Prueba</span>
+    <button type="button" data-cmd="SET saludo &quot;hola mundo&quot;">SET saludo "hola mundo"</button>
+    <button type="button" data-cmd="GET saludo">GET saludo</button>
+    <button type="button" data-cmd="INCR visitas">INCR visitas</button>
+    <button type="button" data-cmd="SET sesion abc EX 10">SET sesion abc EX 10</button>
+    <button type="button" data-cmd="TTL sesion">TTL sesion</button>
+    <button type="button" data-cmd="MGET saludo visitas nada">MGET saludo visitas nada</button>
+    <button type="button" data-cmd="INCR saludo">INCR saludo</button>
+    <button type="button" data-cmd="KEYS *">KEYS *</button>
+  </div>
+</div>
+</section>
+
+<section class="sec" id="arquitectura" data-group="Por dentro">
+<h2>Arquitectura</h2>
+
+<p class="lead">Velo sigue Clean Architecture: el código se ordena en capas y las dependencias solo apuntan hacia dentro. Un comando no sabe que existe TCP, ni RESP, ni la terminal; recibe un almacén y unos argumentos y devuelve un valor.</p>
+
+<figure class="fig fig-capas" id="fig-capas">
+
+  <div class="capas">
+    <div class="capa capa-entrada"><h4 aria-level="3">Entrada</h4><p><code>bin/velo.js</code> → <code>cli.js</code> → <code>server.js</code> · <code>client.js</code></p></div>
+    <div class="capa capa-infra"><h4 aria-level="3">Infraestructura</h4><p><code>TcpServer</code> · <code>ClientConnection</code> · <code>RespParser</code> · <code>RespSerializer</code> · <code>InMemoryStore</code> · <code>TcpClient</code></p></div>
+    <div class="capa capa-app"><h4 aria-level="3">Aplicación</h4><p><code>CommandRegistry</code> · 23 casos de uso · <code>errores.js</code></p></div>
+    <div class="capa capa-dom"><h4 aria-level="3">Dominio</h4><p><code>KeyEntry</code> · <code>TipoDato</code> · puertos <code>IDataStore</code> e <code>ICommandHandler</code></p></div>
+  </div>
+
+  <figcaption><span class="fn">Figura</span> Las cuatro capas. Cada una solo conoce a las de debajo; el dominio no importa nada.</figcaption>
+</figure>
+
+<h3>Mapa de archivos</h3>
+<pre class="tree"><code>bin/velo.js                 punto de entrada: delega en src/cli.js
+scripts/dev.js              recarga automática en desarrollo
+src/
+├─ cli.js                   parsea argumentos y elige modo
+├─ server.js                compone el servidor y el cierre ordenado
+├─ client.js                REPL, modo de un comando y formato de salida
+├─ banner.js
+├─ config/Config.js         .env + entorno + banderas, congelado
+├─ i18n/                    es.json, en.json, t()
+├─ domain/
+│  ├─ entities/KeyEntry.js  valor + tipo + caducidad
+│  └─ ports/                IDataStore, ICommandHandler
+├─ application/
+│  ├─ CommandRegistry.js    nombre → handler
+│  ├─ errores.js            ERR y WRONGTYPE
+│  └─ usecases/phase1/
+│     ├─ strings/           SET, GET, INCR, APPEND… (15)
+│     └─ server/            PING, KEYS, SELECT… (8)
+└─ infrastructure/
+   ├─ server/               TcpServer, ClientConnection
+   ├─ client/               TcpClient
+   ├─ protocol/             RespParser, RespSerializer
+   └─ storage/              InMemoryStore</code></pre>
+
+<h3>Puertos: lo que el dominio pide</h3>
+<p>El dominio declara dos contratos. <code>IDataStore</code> describe un almacén (<code>get</code>, <code>set</code>, <code>del</code>, <code>keys</code>, <code>dbsize</code>, <code>flushAll</code>, el barrido…) y <code>InMemoryStore</code> lo implementa con <code>Map</code>. Si mañana el almacén guardara en disco, los comandos no cambiarían. <code>ICommandHandler</code> describe la forma de un comando: un nombre estático y un método <code>execute(store, args, db)</code>.</p>
+
+<pre class="code"><code>class GetCommand {
+  static get nombre() { return 'GET'; }
+
+  execute(store, args, db) {
+    if (args.length !== 1) {
+      return errorArgumentos('GET');
+    }
+
+    const entrada = store.get(db, args[0]);
+    if (!entrada) return null;
+
+    if (entrada.type !== TipoDato.STRING) {
+      return errorTipo();
+    }
+
+    return entrada.value;
+  }
+}</code></pre>
+
+<p>Así es un comando completo. Valida, consulta el puerto y devuelve un valor JavaScript corriente: <code>null</code>, un string, un número, un array, <code>{ ok }</code> o <code>{ err }</code>. Traducir eso a bytes es trabajo de otra capa (<a class="xref" href="#resp"></a>).</p>
+
+<h3>El registro de comandos</h3>
+<p><code>CommandRegistry</code> instancia los 23 handlers al arrancar y los guarda en un <code>Map</code> indexado por su nombre. Despachar un comando es una búsqueda O(1); añadir uno nuevo es crear un archivo y añadir una línea a la lista.</p>
+
+<pre class="code"><code>execute(nombre, args, store, db) {
+  const handler = this._comandos.get(nombre);
+
+  if (!handler) {
+    return error('comandos.desconocido', { comando: nombre.toLowerCase() });
+  }
+
+  return handler.execute(store, args, db);
+}</code></pre>
+</section>
+
+<section class="sec" id="resp" data-group="Por dentro">
+<h2>El protocolo RESP</h2>
+
+<p class="lead">RESP (REdis Serialization Protocol) es el idioma que hablan Redis y sus clientes. Es texto legible, pero cada dato lleva delante un byte que dice qué tipo es y, cuando hace falta, cuántos bytes ocupa. Cada línea termina en <code>\r\n</code>.</p>
+
+<div class="table-wrap"><table class="resp-types">
+<caption><span class="fn">Tabla</span> Los cinco tipos que usa Velo y el valor JavaScript que los produce.</caption>
+<thead><tr><th>Prefijo</th><th>Tipo</th><th>Ejemplo en el cable</th><th>Lo produce</th></tr></thead>
+<tbody>
+<tr><td><span class="rt" data-t="ok">+</span></td><td>String simple</td><td><code class="wire">+OK\r\n</code></td><td><code>{ ok: 'OK' }</code></td></tr>
+<tr><td><span class="rt" data-t="err">-</span></td><td>Error</td><td><code class="wire">-ERR comando desconocido: 'foo'\r\n</code></td><td><code>{ err: '…' }</code></td></tr>
+<tr><td><span class="rt" data-t="int">:</span></td><td>Entero</td><td><code class="wire">:11\r\n</code></td><td>un <code>number</code></td></tr>
+<tr><td><span class="rt" data-t="bulk">$</span></td><td>Bulk string</td><td><code class="wire">$4\r\nhola\r\n</code> · nulo: <code class="wire">$-1\r\n</code></td><td>un <code>string</code> · <code>null</code></td></tr>
+<tr><td><span class="rt" data-t="arr">*</span></td><td>Array</td><td><code class="wire">*2\r\n$1\r\n1\r\n$-1\r\n</code></td><td>un <code>Array</code></td></tr>
+</tbody>
+</table></div>
+
+<h3>Un comando, byte a byte</h3>
+<p>El cliente siempre envía un array de bulk strings. Así queda <code>SET saludo hola</code> fila a fila: a la izquierda lo que tecleas, a la derecha los bytes que lo representan. En total son 35 bytes.</p>
+
+<div class="table-wrap"><table class="registered">
+<caption><span class="fn">Tabla</span> <code>SET saludo hola</code> tecleado y en el cable, fila a fila.</caption>
+<thead><tr><th>Tecleado</th><th>Bytes</th><th>Significa</th></tr></thead>
+<tbody>
+<tr><td></td><td><code class="wire">*3\r\n</code></td><td>Un array de 3 elementos</td></tr>
+<tr><td rowspan="2"><code>SET</code></td><td><code class="wire">$3\r\n</code></td><td>Bulk string de 3 bytes…</td></tr>
+<tr><td><code class="wire">SET\r\n</code></td><td>…que son <code>SET</code></td></tr>
+<tr><td rowspan="2"><code>saludo</code></td><td><code class="wire">$6\r\n</code></td><td>Bulk string de 6 bytes…</td></tr>
+<tr><td><code class="wire">saludo\r\n</code></td><td>…que son <code>saludo</code></td></tr>
+<tr><td rowspan="2"><code>hola</code></td><td><code class="wire">$4\r\n</code></td><td>Bulk string de 4 bytes…</td></tr>
+<tr><td><code class="wire">hola\r\n</code></td><td>…que son <code>hola</code></td></tr>
+</tbody>
+</table></div>
+
+<p>Las longitudes son lo importante. Gracias a ellas el valor puede contener espacios o saltos de línea sin ambigüedad, y el parser sabe cuántos bytes esperar antes de dar un dato por completo. Fíjate en que la longitud se mide en bytes, no en caracteres: el serializador usa <code>Buffer.byteLength</code>, así que <code>"ñ"</code> viaja como <code class="wire">$2\r\n</code>.</p>
+
+<h3>Del valor a los bytes</h3>
+<p>Toda la traducción vive en un solo método de <code>RespSerializer</code>. Es el contrato entre la capa de aplicación y el protocolo:</p>
+
+<pre class="code"><code>static serializar(valor) {
+  if (valor === null || valor === undefined) {
+    return RespSerializer.nullBulk();          // $-1\r\n
+  }
+  if (typeof valor === 'object' &amp;&amp; 'ok' in valor) {
+    return RespSerializer.simpleString(valor.ok);   // +OK\r\n
+  }
+  if (typeof valor === 'object' &amp;&amp; 'err' in valor) {
+    return RespSerializer.error(valor.err);         // -ERR …\r\n
+  }
+  if (typeof valor === 'number') {
+    return RespSerializer.integer(valor);           // :11\r\n
+  }
+  if (typeof valor === 'string') {
+    return RespSerializer.bulkString(valor);        // $4\r\nhola\r\n
+  }
+  if (Array.isArray(valor)) {
+    return RespSerializer.array(valor);             // *2\r\n…
+  }
+  return RespSerializer.bulkString(String(valor));
+}</code></pre>
+
+<h3>Comandos inline</h3>
+<p>Si el primer byte no es uno de los cinco prefijos, el parser trata la línea como un comando inline: la parte por espacios respetando comillas, como hace una shell. Por eso <code>nc</code> o <code>telnet</code> bastan para hablar con Velo (<a class="xref" href="#arranque"></a>).</p>
+</section>
+
+<section class="sec" id="parser" data-group="Por dentro">
+<h2>El parser incremental</h2>
+
+<p class="lead">TCP no entrega mensajes: entrega un flujo de bytes en trozos de tamaño arbitrario. Un comando puede llegar partido en dos eventos <code>data</code>, o tres comandos pueden llegar pegados en uno. El parser tiene que funcionar en ambos casos.</p>
+
+<p><code>RespParser</code> resuelve esto con una regla simple: acumula todo en un buffer e intenta leer un valor completo desde el principio. Cada función de lectura devuelve <code>{ valor, avance }</code> si encontró un dato entero, o <code>null</code> si faltan bytes. Con <code>null</code> no se pierde nada; el parser simplemente espera al siguiente trozo.</p>
+
+<pre class="code"><code>_procesarBuffer() {
+  while (this._buffer.length &gt; 0) {
+    const resultado = this._parsear(0);
+
+    if (resultado === null) {
+      break;                        // mensaje incompleto: esperar más datos
+    }
+
+    const { valor, avance } = resultado;
+    this._buffer = this._buffer.slice(avance);   // descartar lo consumido
+    this.emit('comando', valor);
+  }
+}</code></pre>
+
+<p>El bucle es lo que hace funcionar el <em>pipelining</em>: si en el buffer hay tres comandos completos, los emite los tres seguidos. La lectura de un bulk string muestra la otra mitad de la idea, comprobar que han llegado todos los bytes anunciados antes de leerlos:</p>
+
+<pre class="code"><code>_parsearBulkString(offset) {
+  const longitudRes = this._parsearLinea(offset);
+  if (!longitudRes) return null;
+
+  const longitud = parseInt(longitudRes.valor, 10);
+  if (longitud === -1) {
+    return { valor: null, avance: longitudRes.avance };
+  }
+
+  const inicio = longitudRes.avance;
+  const fin = inicio + longitud;
+
+  if (this._buffer.length &lt; fin + 2) return null;   // faltan bytes
+
+  const contenido = this._buffer.toString('utf-8', inicio, fin);
+  return { valor: contenido, avance: fin + 2 };
+}</code></pre>
+
+<h3>Comprobado con un socket real</h3>
+<p>Para verificarlo envié a un servidor Velo, en una sola escritura, un <code>PING</code> inline, un <code>SET</code> inline con comillas, un <code>GET</code> y un <code>SET</code> en RESP, seguidos de un segundo <code>PING</code> cortado a la mitad (<code>…$4\r\nPI</code>), y 100 ms después el resto (<code>NG\r\n</code>). El servidor respondió a los cinco, en orden:</p>
+
+<pre class="term"><code><span class="out">+PONG\r\n+OK\r\n$12\r\ncon espacios\r\n+OK\r\n+PONG\r\n</span></code></pre>
+
+<p class="note">El cliente usa el mismo parser para leer las respuestas. Como el servidor contesta en el mismo orden en que recibe, <code>TcpClient</code> empareja cada respuesta con su petición usando una cola FIFO de promesas (<code>_pendientes</code>): la primera respuesta resuelve la primera promesa.</p>
+
+<h3>El precio de la sencillez</h3>
+<p>Cada trozo nuevo hace un <code>Buffer.concat</code> y cada valor leído un <code>slice</code>; con mensajes enormes eso copia memoria de más. Redis usa un búfer de consulta con desplazamientos para evitarlo. Para aprender, la versión clara gana.</p>
+</section>
+
+<section class="sec" id="vida" data-group="Por dentro">
+<h2>La vida de un comando</h2>
+
+<p class="lead">Estos son los diez pasos que recorre <code>SET saludo hola</code> desde el REPL hasta la memoria del servidor y de vuelta. Cada paso nombra el archivo donde ocurre.</p>
+
+<ol class="steps">
+  <li><h4 aria-level="3">Tokenizar</h4><p><code>client.js</code> · <code>tokenizar()</code> parte la línea por espacios respetando comillas: <code>['SET', 'saludo', 'hola']</code>.</p></li>
+  <li><h4 aria-level="3">Encolar y escribir</h4><p><code>TcpClient.enviar()</code> guarda una promesa en <code>_pendientes</code> y escribe <code>RespSerializer.array(tokens)</code> en el socket: <code class="wire">*3\r\n$3\r\nSET\r\n$6\r\nsaludo\r\n$4\r\nhola\r\n</code>.</p></li>
+  <li><h4 aria-level="3">Viajar</h4><p>TCP entrega los 35 bytes al servidor, en uno o varios trozos.</p></li>
+  <li><h4 aria-level="3">Acumular</h4><p><code>ClientConnection</code> recibe cada evento <code>data</code> y se lo pasa a su propio <code>RespParser</code> con <code>feed()</code>. Cada conexión tiene su parser y su base activa.</p></li>
+  <li><h4 aria-level="3">Parsear</h4><p>El primer byte es <code>*</code>: <code>_parsearArray</code> lee tres bulk strings y el parser emite <code>'comando'</code> con <code>['SET', 'saludo', 'hola']</code>.</p></li>
+  <li><h4 aria-level="3">Preparar</h4><p><code>_manejarComando</code> pasa el nombre a mayúsculas, separa los argumentos y toma <code>this._db</code>, la base que esta conexión eligió con <code>SELECT</code>.</p></li>
+  <li><h4 aria-level="3">Despachar</h4><p><code>CommandRegistry.execute('SET', …)</code> encuentra <code>SetCommand</code> en su <code>Map</code>.</p></li>
+  <li><h4 aria-level="3">Ejecutar</h4><p><code>SetCommand</code> valida las opciones (<code>EX</code>, <code>PX</code>, <code>NX</code>, <code>XX</code>), crea <code>new KeyEntry('hola', 'string', null)</code>, llama a <code>store.set(0, 'saludo', entrada)</code> y devuelve <code>{ ok: 'OK' }</code>.</p></li>
+  <li><h4 aria-level="3">Serializar</h4><p><code>RespSerializer.serializar({ ok: 'OK' })</code> produce <code class="wire">+OK\r\n</code> y la conexión lo escribe en el socket.</p></li>
+  <li><h4 aria-level="3">Mostrar</h4><p>El parser del cliente emite <code>{ ok: 'OK' }</code>, que resuelve la primera promesa de <code>_pendientes</code>; <code>formatearRespuesta</code> imprime <code>OK</code> en verde.</p></li>
+</ol>
+
+<figure class="fig fig-seq">
+
+  <div class="seq" role="img" aria-label="Diagrama de secuencia: el cliente envía 35 bytes, el servidor parsea, ejecuta y responde con +OK">
+    <div class="seq-lanes"><span>Cliente</span><span>Servidor</span></div>
+    <div class="seq-row to-s"><code class="wire">*3\r\n$3\r\nSET\r\n$6\r\nsaludo\r\n$4\r\nhola\r\n</code><span class="seq-n">35 bytes</span></div>
+    <div class="seq-row at-s"><span>parsear → despachar → <code>SetCommand</code> → <code>store.set</code></span></div>
+    <div class="seq-row to-c"><code class="wire">+OK\r\n</code><span class="seq-n">5 bytes</span></div>
+  </div>
+
+  <figcaption><span class="fn">Figura</span> La misma conversación vista como secuencia: 35 bytes de ida, 5 de vuelta.</figcaption>
+</figure>
+</section>
+
+<section class="sec" id="almacen" data-group="Por dentro">
+<h2>Almacenamiento y bases de datos</h2>
+
+<p class="lead">Todo el estado de Velo es un <code>Map</code> que contiene otros <code>Map</code>: una entrada por base de datos lógica y, dentro de cada una, cada clave apuntando a un <code>KeyEntry</code>.</p>
+
+<pre class="code"><code>// InMemoryStore
+this._bases = new Map();               // 0 → Map, 1 → Map, … 15 → Map
+
+for (let i = 0; i &lt; this._config.DB_COUNT; i++) {
+  this._bases.set(i, new Map());       // clave → KeyEntry
+}</code></pre>
+
+<p><code>KeyEntry</code> es la entidad del dominio: un valor, un tipo y un instante de caducidad en milisegundos (<code>null</code> si no caduca). El tipo hoy siempre es <code>'string'</code>, pero <code>TipoDato</code> ya declara <code>list</code>, <code>hash</code> y <code>set</code>. Por eso <code>TYPE</code> y el error <code>WRONGTYPE</code> ya funcionan como en Redis.</p>
+
+<h3>Bases por conexión</h3>
+<p>Hay 16 bases por defecto (<code>DB_COUNT</code>) y cada conexión empieza en la 0. La base activa es estado de la conexión, no del servidor: dos clientes pueden trabajar en bases distintas a la vez.</p>
+
+<p>Aquí aparece un problema de diseño interesante. <code>SELECT</code> es un comando como los demás y solo recibe <code>(store, args, db)</code>: no tiene acceso a la conexión, así que no puede cambiarla. La solución es que devuelva una intención en lugar de un efecto, <code>{ nuevoDb: 2 }</code>, y que la infraestructura la interprete:</p>
+
+<pre class="code"><code>// ClientConnection._manejarComando
+if (nombre === 'SELECT' &amp;&amp; typeof resultado === 'object' &amp;&amp; resultado !== null &amp;&amp; 'nuevoDb' in resultado) {
+  this._db = resultado.nuevoDb;
+  this._enviar(RespSerializer.simpleString('OK'));
+  return;
+}</code></pre>
+
+<p>Los comandos siguen sin saber nada de sockets. El coste es un caso especial en la capa de infraestructura, y es un intercambio aceptable.</p>
+</section>
+
+<section class="sec" id="expiracion" data-group="Por dentro">
+<h2>Expiración de claves</h2>
+
+<p class="lead">Una clave con <code>EX</code>, <code>SETEX</code> o <code>EXPIRE</code> guarda el instante en que muere. Velo la elimina de dos maneras, igual que Redis: cuando alguien la toca y ya ha caducado, y en un barrido periódico para las que nadie vuelve a tocar.</p>
+
+<h3>Perezosa: al acceder</h3>
+<p>Cada lectura pasa por <code>InMemoryStore.get</code>, que comprueba la caducidad antes de devolver nada. Una clave muerta se borra en ese momento y el comando ve <code>null</code>. <code>KEYS</code> y <code>DBSIZE</code> aplican la misma limpieza al recorrer.</p>
+
+<pre class="code"><code>get(db, key) {
+  const base = this._obtenerBase(db);
+  const entrada = base.get(key);
+
+  if (!entrada) return null;
+
+  if (entrada.isExpired()) {
+    base.delete(key);
+    return null;
+  }
+
+  return entrada;
+}</code></pre>
+
+<h3>Activa: el barrido</h3>
+<p>Sin la expiración perezosa, una clave que nadie lee ocuparía memoria para siempre. Por eso <code>iniciarSweep()</code> programa un <code>setInterval</code> que, cada <code>SWEEP_INTERVAL_MS</code> (1000 ms por defecto), recorre todas las bases y borra las entradas caducadas. El temporizador lleva <code>.unref()</code> para no impedir que el proceso termine.</p>
+
+<h3>Qué devuelve TTL</h3>
+<div class="table-wrap"><table>
+<caption><span class="fn">Tabla</span> Respuestas de <code>TTL</code>, iguales a las de Redis.</caption>
+<thead><tr><th>Respuesta</th><th>Significa</th></tr></thead>
+<tbody>
+<tr><td><code>(integer) 60</code></td><td>Segundos que le quedan, redondeados hacia arriba.</td></tr>
+<tr><td><code>(integer) -1</code></td><td>La clave existe y no caduca.</td></tr>
+<tr><td><code>(integer) -2</code></td><td>La clave no existe o ya caducó.</td></tr>
+</tbody>
+</table></div>
+
+<p><code>INCR</code>, <code>DECR</code> y <code>APPEND</code> conservan la caducidad de la clave; <code>SET</code> y <code>MSET</code> la reemplazan, y <code>GETEX … PERSIST</code> la quita.</p>
+
+<h3>La diferencia con Redis</h3>
+<p>Redis no recorre todas las claves. Diez veces por segundo toma una muestra de 20 claves entre las que tienen caducidad, borra las expiradas y repite si más del 25 % lo estaban. Es un algoritmo probabilístico y adaptativo que mantiene la latencia baja con millones de claves. El barrido de Velo es exacto pero cuesta O(n) por pasada, e incluye claves sin caducidad. Para un proyecto de aprendizaje es la versión fácil de verificar; para producción, la de Redis.</p>
+</section>
+
+<section class="sec" id="comandos" data-group="Referencia">
+<h2>Referencia de comandos</h2>
+
+<p>Los 23 comandos de la fase 1. Los nombres no distinguen mayúsculas. El símbolo de cada respuesta es su prefijo RESP: <span class="rt" data-t="ok">+</span> string simple, <span class="rt" data-t="err">-</span> error, <span class="rt" data-t="int">:</span> entero, <span class="rt" data-t="bulk">$</span> bulk string o nulo, <span class="rt" data-t="arr">*</span> array.</p>
+
+<div class="filter"><label for="cmd-filter">Filtrar comandos</label><input id="cmd-filter" type="search" data-filter="#tabla-comandos" placeholder="p. ej. ttl, expira, contador" autocomplete="off"></div>
+
+<div class="table-wrap"><table class="commands" id="tabla-comandos">
+<caption><span class="fn">Tabla</span> Juego de comandos.</caption>
+<thead><tr><th>Comando</th><th>Responde</th><th>Qué hace</th></tr></thead>
+<tbody>
+<tr class="grp"><th colspan="3">Strings</th></tr>
+<tr><td><code>SET clave valor [EX s | PX ms] [NX | XX]</code></td><td><span class="rt" data-t="ok">+</span> <span class="rt" data-t="bulk">$</span></td><td>Guarda un string. <code>EX</code>/<code>PX</code> fijan caducidad; <code>NX</code> solo si no existe, <code>XX</code> solo si existe. Si la condición falla, responde nulo.</td></tr>
+<tr><td><code>GET clave</code></td><td><span class="rt" data-t="bulk">$</span></td><td>Devuelve el valor o nulo. <code>WRONGTYPE</code> si la clave no es un string.</td></tr>
+<tr><td><code>DEL clave [clave …]</code></td><td><span class="rt" data-t="int">:</span></td><td>Borra las claves y devuelve cuántas existían.</td></tr>
+<tr><td><code>EXISTS clave [clave …]</code></td><td><span class="rt" data-t="int">:</span></td><td>Cuenta cuántas de las claves existen.</td></tr>
+<tr><td><code>EXPIRE clave segundos</code></td><td><span class="rt" data-t="int">:</span></td><td>Fija la caducidad. <code>1</code> si se aplicó, <code>0</code> si la clave no existe.</td></tr>
+<tr><td><code>TTL clave</code></td><td><span class="rt" data-t="int">:</span></td><td>Segundos restantes; <code>-1</code> sin caducidad, <code>-2</code> no existe.</td></tr>
+<tr><td><code>INCR clave</code></td><td><span class="rt" data-t="int">:</span></td><td>Suma 1 a un contador entero. Si no existe, parte de 0. Conserva la caducidad.</td></tr>
+<tr><td><code>DECR clave</code></td><td><span class="rt" data-t="int">:</span></td><td>Resta 1 a un contador entero, igual que <code>INCR</code>.</td></tr>
+<tr><td><code>MGET clave [clave …]</code></td><td><span class="rt" data-t="arr">*</span></td><td>Varios valores a la vez; nulo para las que no existen o no son strings.</td></tr>
+<tr><td><code>MSET clave valor [clave valor …]</code></td><td><span class="rt" data-t="ok">+</span></td><td>Guarda varias claves a la vez, sin caducidad.</td></tr>
+<tr><td><code>APPEND clave sufijo</code></td><td><span class="rt" data-t="int">:</span></td><td>Añade al final y devuelve la longitud nueva en bytes. Conserva la caducidad.</td></tr>
+<tr><td><code>STRLEN clave</code></td><td><span class="rt" data-t="int">:</span></td><td>Longitud del valor en bytes UTF-8; <code>0</code> si no existe.</td></tr>
+<tr><td><code>SETNX clave valor</code></td><td><span class="rt" data-t="int">:</span></td><td>Guarda solo si no existe: <code>1</code> si la creó, <code>0</code> si no.</td></tr>
+<tr><td><code>SETEX clave segundos valor</code></td><td><span class="rt" data-t="ok">+</span></td><td>Guarda con caducidad en un solo paso.</td></tr>
+<tr><td><code>GETEX clave [EX s | PX ms | EXAT ts | PXAT ts-ms | PERSIST]</code></td><td><span class="rt" data-t="bulk">$</span></td><td>Devuelve el valor y, de paso, cambia o quita su caducidad.</td></tr>
+<tr class="grp"><th colspan="3">Servidor</th></tr>
+<tr><td><code>PING [mensaje]</code></td><td><span class="rt" data-t="ok">+</span> <span class="rt" data-t="bulk">$</span></td><td><code>PONG</code>, o el mensaje si se envía uno.</td></tr>
+<tr><td><code>ECHO mensaje</code></td><td><span class="rt" data-t="bulk">$</span></td><td>Devuelve el mensaje.</td></tr>
+<tr><td><code>DBSIZE</code></td><td><span class="rt" data-t="int">:</span></td><td>Número de claves vivas en la base activa.</td></tr>
+<tr><td><code>FLUSHALL</code></td><td><span class="rt" data-t="ok">+</span></td><td>Vacía todas las bases.</td></tr>
+<tr><td><code>KEYS patrón</code></td><td><span class="rt" data-t="arr">*</span></td><td>Claves que coinciden con el patrón (<code>*</code> y <code>?</code>).</td></tr>
+<tr><td><code>TYPE clave</code></td><td><span class="rt" data-t="ok">+</span></td><td><code>string</code>, o <code>none</code> si no existe.</td></tr>
+<tr><td><code>RENAME origen destino</code></td><td><span class="rt" data-t="ok">+</span></td><td>Renombra la clave conservando su caducidad. Error si el origen no existe.</td></tr>
+<tr><td><code>SELECT índice</code></td><td><span class="rt" data-t="ok">+</span></td><td>Cambia la base activa de esta conexión (0 a 15 por defecto).</td></tr>
+</tbody>
+</table></div>
+<p class="filter-empty" data-filter-empty hidden>Ningún comando coincide con ese filtro.</p>
+
+<h3>Errores</h3>
+<p>Los errores siguen la convención de Redis: un prefijo en mayúsculas y un mensaje. Todos salen de <code>application/errores.js</code> y del catálogo de idiomas.</p>
+<pre class="term"><code><span class="pr">$</span> velo incr saludo
+<span class="err">(error) ERR el valor no es un entero o esta fuera del rango permitido</span>
+<span class="pr">$</span> velo foo
+<span class="err">(error) ERR comando desconocido: 'foo'</span>
+<span class="pr">$</span> velo set k v NX XX
+<span class="err">(error) ERR las opciones NX y XX son mutuamente exclusivas</span></code></pre>
+</section>
+
+<section class="sec" id="config" data-group="Referencia">
+<h2>Configuración y línea de comandos</h2>
+
+<p>Cada valor se resuelve en este orden, y gana el primero que exista: la bandera de la línea de comandos, la variable de entorno, el archivo <code>.env</code> y, por último, el valor por defecto. El resultado se congela con <code>Object.freeze</code>; nadie puede cambiar la configuración en caliente.</p>
+
+<pre class="code"><code>function obtener(clave, valorDefecto, sobreescrituras) {
+  if (sobreescrituras[clave] !== undefined) return String(sobreescrituras[clave]);
+  if (process.env[clave] !== undefined) return process.env[clave];
+  if (variablesEnv[clave] !== undefined) return variablesEnv[clave];
+  return valorDefecto;
+}</code></pre>
+
+<div class="table-wrap"><table class="params">
+<caption><span class="fn">Tabla</span> Parámetros de operación.</caption>
+<thead><tr><th>Variable</th><th>Bandera</th><th>Por defecto</th><th>Controla</th></tr></thead>
+<tbody>
+<tr><td><code>HOST</code></td><td><code>-h</code>, <code>--host</code></td><td><code>127.0.0.1</code></td><td>Dónde escucha el servidor y a dónde conecta el cliente.</td></tr>
+<tr><td><code>PORT</code></td><td><code>-p</code>, <code>--port</code></td><td><code>6380</code></td><td>Puerto TCP.</td></tr>
+<tr><td><code>MAX_CONNECTIONS</code></td><td><code>--max-connections</code></td><td><code>100</code></td><td>Conexiones simultáneas; las que sobran se cierran al llegar.</td></tr>
+<tr><td><code>LOG_LEVEL</code></td><td><code>--log-level</code></td><td><code>info</code></td><td><code>debug</code> registra cada comando; <code>error</code> silencia las conexiones.</td></tr>
+<tr><td><code>DB_COUNT</code></td><td><code>--db-count</code></td><td><code>16</code></td><td>Número de bases lógicas.</td></tr>
+<tr><td><code>SWEEP_INTERVAL_MS</code></td><td><code>--sweep-interval</code></td><td><code>1000</code></td><td>Milisegundos entre barridos de claves caducadas.</td></tr>
+<tr><td><code>LOCALE</code></td><td>—</td><td><code>es</code></td><td>Idioma de los mensajes: <code>es</code> o <code>en</code>.</td></tr>
+<tr><td>—</td><td><code>-n</code>, <code>--db</code></td><td><code>0</code></td><td>Solo cliente: base que se selecciona al conectar.</td></tr>
+</tbody>
+</table></div>
+
+<h3>Cómo se leen los argumentos</h3>
+<p><code>cli.js</code> es un parser de argumentos escrito a mano. Acepta <code>--port 7000</code> y <code>--port=7000</code>, valida tipos (entero o nivel de log) y separa las opciones del comando: todo lo que va antes del primer argumento que no es una opción configura el cliente; todo lo que va después se envía tal cual al servidor. Así <code>velo -p 7000 -n 2 keys "*"</code> no confunde el <code>*</code> con nada.</p>
+<pre class="term"><code><span class="pr">$</span> velo --port abc
+<span class="err">velo: la opcion --port espera un numero entero (recibido: abc)
+Usa "velo --help" para ver la ayuda.</span>      <span class="cm"># código de salida 2</span></code></pre>
+
+<h3>Arranque y cierre</h3>
+<p><code>server.js</code> compone las piezas (configuración, almacén, registro, servidor TCP), arranca el barrido y registra manejadores de <code>SIGINT</code> y <code>SIGTERM</code>. Al cerrar, destruye las conexiones abiertas, detiene el barrido y espera a que el servidor termine. Si el puerto está ocupado, lo dice y sale.</p>
+
+<h3>Recarga en desarrollo</h3>
+<p><code>scripts/dev.js</code> sustituye a <code>nodemon</code> en menos de 70 líneas. Vigila <code>src/</code> con un <code>fs.watch</code> por carpeta, agrupa los cambios en una ventana de 200 ms y reinicia el servidor: le manda <code>SIGTERM</code>, espera a que salga y lanza uno nuevo con <code>fork</code>.</p>
+</section>
+
+<section class="sec" id="i18n" data-group="Referencia">
+<h2>Mensajes e idiomas</h2>
+
+<p>Ningún texto visible está escrito en el código. Todos viven en <code>src/i18n/es.json</code> y <code>en.json</code>, y se piden por su ruta con <code>t()</code>:</p>
+
+<pre class="code"><code>t('servidor.iniciado', { host: '127.0.0.1', puerto: 6380 })
+// → "Servidor iniciado en 127.0.0.1:6380"</code></pre>
+
+<p>La función busca la clave en el idioma activo, si falta la busca en español y, si tampoco está, devuelve la propia clave, de modo que un mensaje ausente se ve pero no rompe nada. Los marcadores <code>{nombre}</code> se sustituyen por parámetros y los arrays se unen con saltos de línea (así está escrita la ayuda). <code>LOCALE=es_ES.UTF-8</code> se reduce a <code>es</code>, y solo se aceptan códigos de dos letras: nunca se carga un archivo con un nombre arbitrario.</p>
+</section>
+
+<section class="sec" id="decisiones" data-group="Contexto">
+<h2>Decisiones y compromisos</h2>
+
+<p class="lead">Cada decisión tiene un motivo y un coste. Estos son los que dan forma a Velo.</p>
+
+<dl class="decisions">
+  <dt>Cero dependencias</dt>
+  <dd><p><strong>Por qué:</strong> el objetivo es ver cómo funciona todo; una librería esconde justo lo que se quiere aprender. Por eso hay parser de RESP, de argumentos, de <code>.env</code>, i18n y recarga escritos a mano.</p><p><strong>Coste:</strong> se reinventan ruedas y cada una tiene menos casos cubiertos que su versión madura.</p></dd>
+
+  <dt>Hablar RESP, no JSON ni HTTP</dt>
+  <dd><p><strong>Por qué:</strong> es el protocolo de Redis, así que lo aprendido sirve para entender clientes reales; además es legible con <code>nc</code> y lleva longitudes que delimitan cada dato sin ambigüedad.</p><p><strong>Coste:</strong> hay que escribir un parser con estado, en lugar de un <code>JSON.parse</code>.</p></dd>
+
+  <dt>Comandos que devuelven valores, no bytes</dt>
+  <dd><p><strong>Por qué:</strong> si un comando devuelve <code>null</code>, un número o <code>{ ok }</code>, se puede probar sin red y cambiar de protocolo sin tocarlo. El serializador es el único que conoce RESP.</p><p><strong>Coste:</strong> casos como <code>SELECT</code> necesitan un canal especial (<code>{ nuevoDb }</code>).</p></dd>
+
+  <dt>Un comando por archivo y un registro</dt>
+  <dd><p><strong>Por qué:</strong> cada comando se lee aislado, el despacho es una búsqueda en un <code>Map</code> y añadir uno es un archivo y una línea.</p><p><strong>Coste:</strong> 23 archivos pequeños y algo de validación repetida.</p></dd>
+
+  <dt>Un solo hilo</dt>
+  <dd><p><strong>Por qué:</strong> igual que Redis, cada comando corre completo dentro del bucle de eventos antes de que empiece el siguiente. <code>INCR</code> lee, suma y escribe sin que nadie pueda colarse en medio: atomicidad sin locks.</p><p><strong>Coste:</strong> un comando lento, como <code>KEYS *</code> sobre muchas claves, bloquea a todos los clientes mientras dura.</p></dd>
+
+  <dt>Expiración perezosa más barrido completo</dt>
+  <dd><p><strong>Por qué:</strong> la combinación garantiza que nadie lea una clave caducada y que la memoria se libere aunque nadie las lea; el barrido completo es trivial de razonar.</p><p><strong>Coste:</strong> O(n) por pasada (<a class="xref" href="#expiracion"></a>).</p></dd>
+
+  <dt>Un binario para todo</dt>
+  <dd><p><strong>Por qué:</strong> <code>velo server</code>, <code>velo</code> y <code>velo get clave</code> comparten configuración, ayuda y mensajes; Redis lo reparte entre <code>redis-server</code> y <code>redis-cli</code>.</p><p><strong>Coste:</strong> el parser de argumentos tiene que distinguir modos.</p></dd>
+
+  <dt>Puerto 6380</dt>
+  <dd><p><strong>Por qué:</strong> no choca con un Redis local en el 6379, así que se pueden comparar los dos lado a lado.</p></dd>
+</dl>
+</section>
+
+<section class="sec" id="redis" data-group="Contexto">
+<h2>Diferencias con Redis</h2>
+
+<p>Velo imita la superficie de Redis, no su escala. Esta tabla separa lo que se comporta igual de lo que no.</p>
+
+<div class="table-wrap"><table class="compare">
+<caption><span class="fn">Tabla</span> Redis frente a Velo.</caption>
+<thead><tr><th>Aspecto</th><th>Redis</th><th>Velo</th></tr></thead>
+<tbody>
+<tr><td>Tipos de datos</td><td>Strings, listas, hashes, sets, sorted sets, streams…</td><td>Solo strings; los demás tipos están reservados en <code>TipoDato</code>.</td></tr>
+<tr><td>Persistencia</td><td>Instantáneas RDB y registro AOF.</td><td class="no">Ninguna: al parar el proceso se pierde todo.</td></tr>
+<tr><td>Valores binarios</td><td>Binary-safe.</td><td>Se decodifican como UTF-8: un valor binario arbitrario no sobrevive intacto.</td></tr>
+<tr><td>Expiración activa</td><td>Muestreo adaptativo de 20 claves con TTL, 10 veces por segundo.</td><td>Recorre todas las claves cada <code>SWEEP_INTERVAL_MS</code>.</td></tr>
+<tr><td>Patrones de <code>KEYS</code></td><td><code>*</code>, <code>?</code>, <code>[ae]</code>, <code>[^e]</code>, <code>[a-b]</code> y escape con <code>\</code>; distingue mayúsculas.</td><td>Solo <code>*</code> y <code>?</code>; no distingue mayúsculas.</td></tr>
+<tr><td>Protocolo</td><td>RESP2 y RESP3, más inline.</td><td>Los tipos de RESP2, más inline.</td></tr>
+<tr><td>Ejecución</td><td>Un hilo para los comandos.</td><td>Un hilo: el bucle de eventos de Node.</td></tr>
+<tr><td>Puerto por defecto</td><td><code>6379</code></td><td><code>6380</code></td></tr>
+<tr><td>Más allá</td><td>Replicación, Pub/Sub, transacciones, scripts Lua, clúster, ACL, <code>SCAN</code>.</td><td class="no">Nada de esto.</td></tr>
+</tbody>
+</table></div>
+</section>
+
+<section class="sec" id="ruta" data-group="Contexto">
+<h2>Hoja de ruta</h2>
+
+<ol class="roadmap">
+  <li class="done"><h4 aria-level="3">Fase 1 · hecha</h4><p>Servidor TCP, RESP, cliente, configuración, i18n y los 23 comandos de strings y servidor.</p></li>
+  <li class="no"><h4 aria-level="3">Fase 2 · anticipada en el código</h4><p>La carpeta de casos de uso se llama <code>usecases/phase1</code> y <code>TipoDato</code> ya declara <code>list</code>, <code>hash</code> y <code>set</code>. Los comandos que los usen tienen el sitio preparado.</p></li>
+  <li class="no"><h4 aria-level="3">Ideas abiertas · sin compromiso</h4><p>Persistencia en disco, pruebas automatizadas, <code>SCAN</code>, valores binarios con <code>Buffer</code>, barrido por muestreo como el de Redis.</p></li>
+</ol>
+
+<p>El código está en <a href="https://github.com/alblandino/velo">github.com/alblandino/velo</a> bajo licencia MIT.</p>
+</section>
